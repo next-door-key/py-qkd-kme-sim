@@ -1,6 +1,9 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
-from app.dependencies import get_token_header
+from app.config import Settings
+from app.dependencies import get_token_header, get_settings
 
 router = APIRouter(
     prefix='/api/v1/keys',
@@ -11,5 +14,5 @@ router = APIRouter(
 
 
 @router.get('/{slave_sae_id}/status')
-async def status(slave_sae_id: str):
-    return {'slave_sae_id': slave_sae_id}
+async def status(slave_sae_id: str, settings: Annotated[Settings, Depends(get_settings)]):
+    return {'slave_sae_id': slave_sae_id, 'settings': settings.model_dump()}
