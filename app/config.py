@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    is_master: bool = False
+
     kme_id: str
     attached_sae_id: str
 
