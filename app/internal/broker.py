@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 from typing import Union, Callable
@@ -32,16 +33,16 @@ class Broker:
         self._connection = await aiormq.connect(self._url)
         self._channel = await self._connection.channel()
 
-        logger.info('Connected to broker. Declaring queue...')
+        logger.info('Connected to broker.')
 
         await self._channel.queue_declare(self._queue_name)
 
         if not self._is_master:
-            logger.info('Creating the broker listener because this instance is the master')
             await self._setup_listener()
+            logger.info('Broker listener created. Listening to new messages.')
 
     async def disconnect(self):
-        logger.info('Closing broker connection')
+        logger.warning('Closing broker connection')
 
         await self._connection.close()
         self._channel = None
@@ -65,12 +66,15 @@ class Broker:
             logging.exception(e)
 
     def register_callback(self, cb: Callable):
+        if not inspect.iscoroutinefunction(cb):
+            raise ValueError('The given callback function must be awaitable')
+
         self.callbacks.append(cb)
 
-    async def send_message(self, routing_key: str, message: dict) -> None:
+    async def send_message(self, message: dict) -> None:
         if self._channel is None or self._channel.is_closed:
             logger.warning('Cannot send message because broker channel is closed')
             return
 
-        await self._channel.basic_publish(routing_key=routing_key,
+        await self._channel.basic_publish(routing_key=self._queue_name,
                                           body=json.dumps(message).encode())

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from typing import Union
 
 from fastapi import FastAPI
 
@@ -6,19 +7,19 @@ from app.dependencies import get_settings
 from app.internal.lifecycle import Lifecycle
 from app.routers import keys
 
-lifecycle = None
+LIFECYCLE: Union[Lifecycle, None] = None
 
 
 @asynccontextmanager
 async def lifespan(api: FastAPI):
-    global lifecycle
+    global LIFECYCLE
 
     settings = get_settings()
-    lifecycle = Lifecycle(api, settings)
+    LIFECYCLE = Lifecycle(api, settings)
 
-    await lifecycle.before_start()
+    await LIFECYCLE.before_start()
     yield
-    await lifecycle.after_landing()
+    await LIFECYCLE.after_landing()
 
 
 app = FastAPI(lifespan=lifespan)
