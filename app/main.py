@@ -16,14 +16,14 @@ async def lifespan(api: FastAPI):
     settings = get_settings()
     lifecycle = Lifecycle(api, settings)
 
-    lifecycle.before_start()
+    await lifecycle.before_start()
     yield
-    lifecycle.after_landing()
+    await lifecycle.after_landing()
 
 
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(keys.router)
+app.include_router(keys.router, prefix='/api/v1')
 
 
 @app.get('/')

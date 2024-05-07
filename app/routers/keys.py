@@ -6,7 +6,7 @@ from app.config import Settings
 from app.dependencies import get_token_header, get_settings
 
 router = APIRouter(
-    prefix='/api/v1/keys',
+    prefix='/keys',
     tags=['keys'],
     dependencies=[Depends(get_token_header)],
     responses={404: {'message': 'Not found'}}

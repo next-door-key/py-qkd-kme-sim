@@ -11,9 +11,9 @@ class Lifecycle:
         self.app = app
         self.settings = settings
 
-    def before_start(self):
+    async def before_start(self):
         self.broker = Broker(self.settings)
-        self.broker.connect()
+        await self.broker.connect()
 
-    def after_landing(self):
-        self.broker.disconnect()
+    async def after_landing(self):
+        await self.broker.disconnect()

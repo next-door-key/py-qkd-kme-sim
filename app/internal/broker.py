@@ -1,111 +1,76 @@
 import json
 import logging
-from typing import Union
+from typing import Union, Callable
 
-import pika
-from pika.adapters.asyncio_connection import AsyncioConnection
-from pika.adapters.blocking_connection import BlockingChannel
-from pika.spec import Basic, BasicProperties
+import aiormq
+from aiormq.abc import AbstractConnection, AbstractChannel, DeliveredMessage
 
 from app.config import Settings
 
 logger = logging.getLogger('uvicorn.error')
 
 
-def callback(channel: BlockingChannel, method: Basic.Deliver, properties: BasicProperties, body):
-    logger.info('received message', channel, method, properties, body)
-
-
 class Broker:
     def __init__(self, settings: Settings):
-        self.connection: Union[AsyncioConnection, None] = None
-        self.channel = None
-
-        self.exchange_name = ''
-        self.queue_name = settings.rabbitmq_shared_queue
-
-        self.connection_parameters = pika.ConnectionParameters(
-            host=settings.rabbitmq_host,
-            port=settings.rabbitmq_port,
+        self._connection: Union[AbstractConnection, None] = None
+        self._channel: Union[AbstractChannel, None] = None
+        self._url = 'amqp://{}:{}@{}:{}/'.format(
+            settings.mq_username,
+            settings.mq_password,
+            settings.mq_host,
+            settings.mq_port
         )
 
-    def connect(self):
-        logger.info('Connecting to broker, %s:%i', self.connection_parameters.host, self.connection_parameters.port)
+        self._queue_name = settings.mq_shared_queue
+        self._is_master = settings.is_master
 
-        self.connection = AsyncioConnection(
-            parameters=self.connection_parameters,
-            on_open_callback=self.on_connection_opened,
-            on_close_callback=self.on_connection_closed,
-            on_open_error_callback=self.on_connection_error,
+        self.callbacks = []
+
+    async def connect(self):
+        logger.info('Connecting to broker...')
+
+        self._connection = await aiormq.connect(self._url)
+        self._channel = await self._connection.channel()
+
+        logger.info('Connected to broker. Declaring queue...')
+
+        await self._channel.queue_declare(self._queue_name)
+
+        if not self._is_master:
+            logger.info('Creating the broker listener because this instance is the master')
+            await self._setup_listener()
+
+    async def disconnect(self):
+        logger.info('Closing broker connection')
+
+        await self._connection.close()
+        self._channel = None
+
+    async def _setup_listener(self):
+        await self._channel.basic_consume(
+            queue=self._queue_name,
+            consumer_callback=self._receive_message
         )
 
-    def disconnect(self):
-        self.connection.close()
+    async def _receive_message(self, message: DeliveredMessage):
+        logger.info('Received new message from broker: %s', message.body)
 
-    def on_connection_opened(self, connection: AsyncioConnection):
-        logger.info('Broker connection opened')
-        self.connection = connection
+        try:
+            for callback in self.callbacks:
+                await callback(message)
 
-        logger.debug('Creating a broker channel')
-        self.connection.channel(on_open_callback=self.on_channel_opened)
+            await self._channel.basic_ack(message.delivery_tag)
+        except Exception as e:
+            await self._channel.basic_nack(message.delivery_tag)
+            logging.exception(e)
 
-    def on_connection_closed(self, connection: AsyncioConnection, reason: BaseException):
-        logger.warning('Broker connection closed: %s', reason)
+    def register_callback(self, cb: Callable):
+        self.callbacks.append(cb)
 
-        self.channel = None
-
-    def on_connection_error(self, connection: AsyncioConnection, error: BaseException):
-        logger.error('Failed to open broker connection: %s', error)
-
-    def on_channel_opened(self, _):
-        logger.info('Broker channel opened')
-
-        self.channel.add_on_close_callback(self.on_channel_closed)
-        self.setup_queue()
-
-    def on_channel_closed(self, channel, reason):
-        logger.warning('Broker channel %i was closed: %s', channel, reason)
-
-        self.channel = None
-        self.connection.close()
-
-    def setup_queue(self):
-        logger.debug('Declaring broker queue: %s', self.queue_name)
-
-        self.channel.queue_declare(queue=self.queue_name, callback=self.on_queue_declare)
-
-    def on_queue_declare(self, _):
-        self.channel.queue_bind(
-            self.queue_name,
-            self.exchange_name,
-            routing_key=self.queue_name,
-            callback=self.on_queue_bind
-        )
-
-    def on_queue_bind(self, _):
-        logger.debug('Broker queue bound')
-
-        self.start_queue_publishing()
-
-    def start_queue_publishing(self):
-        self.channel.confirm_delivery(self.on_delivery_confirmation)
-
-    def on_delivery_confirmation(self, method_frame):
-        confirmation_type = method_frame.method.NAME.split('.')[1].lower()
-
-        logger.info('Received %s for delivery tag: %i', confirmation_type, method_frame.method.delivery_tag)
-
-    def publish_message(self, message):
-        if self.channel is None or not self.channel.is_open:
+    async def send_message(self, routing_key: str, message: dict) -> None:
+        if self._channel is None or self._channel.is_closed:
+            logger.warning('Cannot send message because broker channel is closed')
             return
 
-        headers = {'a': 'b'}
-        properties = pika.BasicProperties(
-            app_id='example-publisher',
-            content_type='application/json',
-            headers=headers)
-
-        self.channel.basic_publish(self.exchange_name, self.queue_name,
-                                   json.dumps(message, ensure_ascii=False),
-                                   properties)
-        logger.info('Published message # %i', 1)
+        await self._channel.basic_publish(routing_key=routing_key,
+                                          body=json.dumps(message).encode())
