@@ -1,10 +1,14 @@
+import asyncio
 import json
+import logging
 
 from aiormq.abc import DeliveredMessage
 
 from app.config import Settings
 from app.internal import key_generator
 from app.internal.broker import Broker
+
+logger = logging.getLogger('uvicorn.error')
 
 
 class KeyManager:
@@ -14,17 +18,28 @@ class KeyManager:
         # TODO: Take from config and validate if is a multiple of 8 and is above minimum and below maximum key length
         self._key_size = 128
         self._keys: list[dict] = []
+        self._key_generate_timeout_in_seconds = 2
 
     async def start_generating(self):
         if not self._is_master:
             self._broker.register_callback(self._listen_to_new_keys)
             return
 
-        # TODO: This causes an unbreakable infinite loop, only killable with SIGKILL.
-        #   Need to verify how aio-pika works with the asyncio event loop, to prevent blocking of all threads
-        await self._generate_key()
-        # await asyncio.sleep(10)
-        # await self.start_generating()
+        has_consumers = False
+
+        while True:
+            if not await self._broker.has_consumers():
+                logger.warning('Waiting 10 seconds for 2nd KME to come online...')
+                await asyncio.sleep(10)
+
+                continue
+
+            if not has_consumers:
+                logger.info('Found the 2nd KME, starting key generation.')
+                has_consumers = True
+
+            await asyncio.sleep(self._key_generate_timeout_in_seconds)
+            await self._generate_key()
 
     async def _generate_key(self):
         key = key_generator.generate(self._key_size)

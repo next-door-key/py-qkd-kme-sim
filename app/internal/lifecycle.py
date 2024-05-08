@@ -1,3 +1,4 @@
+import asyncio
 from typing import Union
 
 from fastapi import FastAPI
@@ -20,7 +21,10 @@ class Lifecycle:
         await self.broker.connect()
 
         self.key_manager = KeyManager(self.settings, self.broker)
-        await self.key_manager.start_generating()
+        
+        # Do not await, otherwise it freezes main thread
+        # noinspection PyAsyncCall
+        asyncio.create_task(self.key_manager.start_generating())
 
     async def after_landing(self):
         await self.broker.disconnect()

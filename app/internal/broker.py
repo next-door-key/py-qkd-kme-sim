@@ -15,6 +15,8 @@ class Broker:
     def __init__(self, settings: Settings):
         self._connection: Union[AbstractConnection, None] = None
         self._channel: Union[AbstractChannel, None] = None
+        self._queue = None
+
         self._url = 'amqp://{}:{}@{}:{}/'.format(
             settings.mq_username,
             settings.mq_password,
@@ -35,17 +37,37 @@ class Broker:
 
         logger.info('Connected to broker.')
 
-        await self._channel.queue_declare(self._queue_name)
+        await self._declare_queue()
 
         if not self._is_master:
             await self._setup_listener()
             logger.info('Broker listener created. Listening to new messages.')
+
+    async def _declare_queue(self, passive: bool = False):
+        self._queue = await self._channel.queue_declare(
+            queue=self._queue_name,
+            passive=passive
+        )
 
     async def disconnect(self):
         logger.warning('Closing broker connection')
 
         await self._connection.close()
         self._channel = None
+
+    async def has_consumers(self) -> bool:
+        if not self._is_master:
+            return True
+
+        if self._channel is None or self._channel.is_closed:
+            return False
+
+        if self._queue is None:
+            return False
+
+        await self._declare_queue(passive=True)
+
+        return self._queue.consumer_count > 0
 
     async def _setup_listener(self):
         await self._channel.basic_consume(
@@ -61,9 +83,10 @@ class Broker:
                 await callback(message)
 
             await self._channel.basic_ack(message.delivery_tag)
-        except Exception as e:
+        except Exception:
             await self._channel.basic_nack(message.delivery_tag)
-            logging.exception(e)
+
+            raise
 
     def register_callback(self, cb: Callable):
         if not inspect.iscoroutinefunction(cb):
