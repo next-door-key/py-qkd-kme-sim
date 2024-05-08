@@ -15,7 +15,6 @@ class KeyManager:
     def __init__(self, settings: Settings, broker: Broker):
         self._is_master = settings.is_master
         self._broker = broker
-        # TODO: Take from config and validate if is a multiple of 8 and is above minimum and below maximum key length
         self._key_size = settings.default_key_size
         self._key_generate_timeout_in_seconds = settings.key_generation_timeout_in_seconds
 
