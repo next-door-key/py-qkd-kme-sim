@@ -5,6 +5,7 @@ from fastapi import Path, Query
 from pydantic import BaseModel
 
 from app.dependencies import get_settings
+from app.routers.key_container import KeyIDContainer
 
 settings = get_settings()
 
@@ -28,11 +29,6 @@ class GetDecryptionKeysRequest(BaseModel):
     key_ID: UUID
 
 
-class KeyContainer(BaseModel):
-    key_ID: UUID
-    key_ID_extension: Union[dict, None] = None
-
-
 class PostDecryptionKeysRequest(BaseModel):
-    key_IDs: Annotated[list[KeyContainer], Path(min_length=1)]
+    key_IDs: Annotated[list[KeyIDContainer], Path(min_length=1)]
     key_IDs_extension: Union[dict, None] = None
