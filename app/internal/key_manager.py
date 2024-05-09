@@ -5,9 +5,10 @@ import logging
 from aiormq.abc import DeliveredMessage
 
 from app.config import Settings
-from app.internal import key_generator
+from app.enums.initiated_by import InitiatedBy
+from app.internal import key_generator, key_requester
 from app.internal.broker import Broker
-from app.routers.key_container import FullKeyContainer
+from app.models.key_container import FullKeyContainer, ActivatedKeyContainer
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -22,6 +23,7 @@ class KeyManager:
         self._max_key_count = settings.max_key_count
 
         self._keys: list[FullKeyContainer] = []
+        self._activated_keys: list[ActivatedKeyContainer] = []
 
     async def start_generating(self):
         if not self._is_master:
@@ -76,22 +78,69 @@ class KeyManager:
             'data': key.json()
         })
 
+    async def _broadcast_activated_key(self, key: ActivatedKeyContainer):
+        await self._broker.send_message({
+            'type': 'activated_key',
+            'data': key.json()
+        })
+
+    async def _broadcast_deactivated_key(self, key: ActivatedKeyContainer):
+        await self._broker.send_message({
+            'type': 'deactivated_key',
+            'data': key.json()
+        })
+
     async def _listen_to_new_keys(self, message: DeliveredMessage):
         json_message = json.loads(message.body.decode())
 
+        data = json_message['data']
+
         if json_message['type'] == 'new_key':
-            self._keys.append(json_message['data'])
+            self._keys.append(data)
+        elif json_message['type'] == 'remove_key':
+            self._keys.remove(data)
+        elif json_message['type'] == 'activate_key':
+            self._activated_keys.append(data)
+        elif json_message['type'] == 'deactivate_key':
+            self._activated_keys.remove(data)
 
     def get_key_count(self):
         return len(self._keys)
 
-    async def get_key(self, master_sae_id: str, slave_sae_id: str):
-        # If master needs a key:
-        #   1) take a key from the key pool
-        #   2) put the key into the activated keys
-        #   3) send message to activate key (key id, master, slave sae ids)
-        #   4) return the key container
-        # If a slave needs a key:
-        #   1) ask master to give a key (send request id, master_sae_id, slave_sae_id)
-        #       a) how can a slave ask the master? it is impossible, only way HTTP request, but that is slow and bad (maybe race conditions?)
-        pass
+    def _get_single_key(self) -> FullKeyContainer:
+        return self._keys.pop()
+
+    def _activate_key(self, key: FullKeyContainer, master_sae_id: str, slave_sae_id: str) -> ActivatedKeyContainer:
+        activated_key = ActivatedKeyContainer(
+            key_container=key,
+            master_sae_id=master_sae_id,
+            slave_sae_id=slave_sae_id
+        )
+
+        self._activated_keys.append(activated_key)
+
+        return activated_key
+
+    async def get_key(self, master_sae_id: str, slave_sae_id: str, initiated_by: InitiatedBy) -> ActivatedKeyContainer:
+        activated_key: ActivatedKeyContainer
+
+        if initiated_by.MASTER:
+            activated_key = self._activate_key(self._get_single_key(), master_sae_id, slave_sae_id)
+
+            await self._broadcast_activated_key(activated_key)
+        else:
+            activated_key = key_requester.ask_for_key(master_sae_id, slave_sae_id)
+
+            self._activated_keys.append(activated_key)
+
+        return activated_key
+
+    async def deactivate_key(self, activated_key: ActivatedKeyContainer, initiated_by: InitiatedBy):
+        if initiated_by.MASTER:
+            self._activated_keys.remove(activated_key)
+
+            await self._broadcast_deactivated_key(activated_key)
+        else:
+            activated_key = key_requester.ask_to_deactivate_key(activated_key)
+
+            self._activated_keys.remove(activated_key)

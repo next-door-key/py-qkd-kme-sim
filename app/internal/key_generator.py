@@ -2,7 +2,7 @@ import base64
 import os
 import uuid
 
-from app.routers.key_container import FullKeyContainer, KeyContainer
+from app.models.key_container import FullKeyContainer, KeyContainer
 
 
 def generate(size: int) -> FullKeyContainer:

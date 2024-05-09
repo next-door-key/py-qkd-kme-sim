@@ -3,8 +3,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import Settings
-from app.dependencies import get_token_header, get_settings, get_lifecycle
+from app.dependencies import get_token_header, get_settings, get_lifecycle, get_kme_and_sae_ids
+from app.enums.initiated_by import InitiatedBy
 from app.internal.lifecycle import Lifecycle
+from app.models.key_container import KeyContainer
 from app.models.requests import PostEncryptionKeysRequest, GetEncryptionKeysRequest, GetDecryptionKeysRequest, \
     PostDecryptionKeysRequest
 
@@ -22,25 +24,13 @@ async def status(
         settings: Annotated[Settings, Depends(get_settings)],
         lifecycle: Annotated[Lifecycle, Depends(get_lifecycle)]
 ):
-    # Validate if we can find the given slave SAE's KME
-    if slave_sae_id == settings.attached_sae_id:
-        source_kme_id = settings.linked_kme_id
-        target_kme_id = settings.kme_id
-
-        master_sae_id = settings.linked_sae_id
-    elif slave_sae_id == settings.linked_sae_id:
-        source_kme_id = settings.kme_id
-        target_kme_id = settings.linked_kme_id
-
-        master_sae_id = settings.attached_sae_id
-    else:
-        raise HTTPException(status_code=400, detail=f'Linked KME with linked SAE ID {slave_sae_id} is not found')
+    ids = get_kme_and_sae_ids(slave_sae_id)
 
     return {
-        'source_KME_ID': source_kme_id,
-        'target_KME_ID': target_kme_id,
-        'master_SAE_ID': master_sae_id,
-        'slave_SAE_ID': slave_sae_id,
+        'source_KME_ID': ids.master_kme_id,
+        'target_KME_ID': ids.slave_kme_id,
+        'master_SAE_ID': ids.master_sae_id,
+        'slave_SAE_ID': ids.slave_sae_id,
         'key_size': settings.default_key_size,
         'stored_key_count': lifecycle.key_manager.get_key_count(),
         'max_key_count': settings.max_key_count,
@@ -52,8 +42,34 @@ async def status(
 
 
 @router.get('/{slave_sae_id}/enc_keys')
-async def get_encryption_keys(slave_sae_id: str, query: GetEncryptionKeysRequest = Depends()):
-    return {'slave_sae_id': slave_sae_id, 'query': query.model_dump()}
+async def get_encryption_keys(
+        slave_sae_id: str,
+        settings: Annotated[Settings, Depends(get_settings)],
+        lifecycle: Annotated[Lifecycle, Depends(get_lifecycle)],
+        query: GetEncryptionKeysRequest = Depends()
+):
+    ids = get_kme_and_sae_ids(slave_sae_id)
+
+    key_count = lifecycle.key_manager.get_key_count()
+
+    if key_count <= 0:
+        raise HTTPException(status_code=400, detail='Unable, because there are 0 keys remaining')
+
+    if key_count - query.number <= 0:
+        raise HTTPException(status_code=400, detail='Unable, because more keys are requested than available')
+
+    keys: list[KeyContainer] = []
+
+    for i in range(query.number):
+        key = await lifecycle.key_manager.get_key(
+            master_sae_id=ids.master_sae_id,
+            slave_sae_id=ids.slave_sae_id,
+            initiated_by=InitiatedBy.MASTER if settings.is_master else InitiatedBy.SLAVE
+        )
+
+        keys.append(key.key_container.key_container)
+
+    return {'keys': keys}
 
 
 @router.post('/{slave_sae_id}/enc_keys')
