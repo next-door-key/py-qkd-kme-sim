@@ -21,8 +21,8 @@ class Lifecycle:
         await self.broker.connect()
 
         self.key_manager = KeyManager(self.settings, self.broker)
-        
-        # Do not await, otherwise it freezes main thread
+
+        # Do not await, otherwise it freezes the main thread
         # noinspection PyAsyncCall
         asyncio.create_task(self.key_manager.start_generating())
 

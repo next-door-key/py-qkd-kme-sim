@@ -1,14 +1,14 @@
 import asyncio
 import json
 import logging
+from typing import Union
 
 from aiormq.abc import DeliveredMessage
 
 from app.config import Settings
-from app.enums.initiated_by import InitiatedBy
 from app.internal import key_generator, key_requester
 from app.internal.broker import Broker
-from app.models.key_container import FullKeyContainer, ActivatedKeyContainer
+from app.models.key_container import FullKeyContainer, ActivatedKeyContainer, ActivatedKeyMetadata
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -69,25 +69,19 @@ class KeyManager:
     async def _broadcast_key(self, key: FullKeyContainer):
         await self._broker.send_message({
             'type': 'new_key',
-            'data': key.json()
-        })
-
-    async def _broadcast_key_removal(self, key: FullKeyContainer):
-        await self._broker.send_message({
-            'type': 'remove_key',
-            'data': key.json()
+            'data': key.model_dump()
         })
 
     async def _broadcast_activated_key(self, key: ActivatedKeyContainer):
         await self._broker.send_message({
             'type': 'activated_key',
-            'data': key.json()
+            'data': key.model_dump()
         })
 
     async def _broadcast_deactivated_key(self, key: ActivatedKeyContainer):
         await self._broker.send_message({
             'type': 'deactivated_key',
-            'data': key.json()
+            'data': key.model_dump()
         })
 
     async def _listen_to_new_keys(self, message: DeliveredMessage):
@@ -96,19 +90,38 @@ class KeyManager:
         data = json_message['data']
 
         if json_message['type'] == 'new_key':
-            self._keys.append(data)
-        elif json_message['type'] == 'remove_key':
-            self._keys.remove(data)
-        elif json_message['type'] == 'activate_key':
-            self._activated_keys.append(data)
-        elif json_message['type'] == 'deactivate_key':
-            self._activated_keys.remove(data)
+            self._keys.append(FullKeyContainer(**data))
+        elif json_message['type'] == 'activated_key':
+            self._activated_keys.append(ActivatedKeyContainer(**data))
+        elif json_message['type'] == 'deactivated_key':
+            self._remove_key(str(ActivatedKeyContainer(**data).key_container.key_container.key_ID))
 
     def get_key_count(self):
         return len(self._keys)
 
+    def get_activated_key_count(self):
+        return len(self._activated_keys)
+
     def _get_single_key(self) -> FullKeyContainer:
         return self._keys.pop()
+
+    def _remove_key(self, key_id: str) -> bool:
+        removed = False
+
+        for i, key in enumerate(self._keys):
+            if str(key.key_container.key_ID) == key_id:
+                del self._keys[i]
+                removed = True
+
+        for i, key in enumerate(self._activated_keys):
+            if str(key.key_container.key_container.key_ID) == key_id:
+                del self._activated_keys[i]
+                removed = True
+
+        if not removed:
+            logger.warning(f'Was asked to remove key from key pools, but the key did not exist, id: {key_id}')
+
+        return removed
 
     def _activate_key(self, key: FullKeyContainer, master_sae_id: str, slave_sae_id: str) -> ActivatedKeyContainer:
         activated_key = ActivatedKeyContainer(
@@ -121,13 +134,14 @@ class KeyManager:
 
         return activated_key
 
-    async def get_key(self, master_sae_id: str, slave_sae_id: str, initiated_by: InitiatedBy) -> ActivatedKeyContainer:
+    async def get_key(self, master_sae_id: str, slave_sae_id: str, do_broadcast: bool = True) -> ActivatedKeyContainer:
         activated_key: ActivatedKeyContainer
 
-        if initiated_by.MASTER:
+        if self._is_master:
             activated_key = self._activate_key(self._get_single_key(), master_sae_id, slave_sae_id)
 
-            await self._broadcast_activated_key(activated_key)
+            if do_broadcast:
+                await self._broadcast_activated_key(activated_key)
         else:
             activated_key = key_requester.ask_for_key(master_sae_id, slave_sae_id)
 
@@ -135,12 +149,35 @@ class KeyManager:
 
         return activated_key
 
-    async def deactivate_key(self, activated_key: ActivatedKeyContainer, initiated_by: InitiatedBy):
-        if initiated_by.MASTER:
-            self._activated_keys.remove(activated_key)
+    def _get_activated_key_by_id(self, key_id: str) -> ActivatedKeyContainer:
+        for key in self._activated_keys:
+            if str(key.key_container.key_container.key_ID) == key_id:
+                return key
 
-            await self._broadcast_deactivated_key(activated_key)
+        raise ValueError('Key cannot be found because key_id is not found in activated keys')
+
+    def get_activated_key_metadata(self, key_id: str) -> Union[ActivatedKeyMetadata, None]:
+        try:
+            key = self._get_activated_key_by_id(key_id)
+
+            return ActivatedKeyMetadata(
+                master_sae_id=key.master_sae_id,
+                slave_sae_id=key.slave_sae_id
+            )
+        except ValueError:
+            return None
+
+    async def deactivate_key(self, key_id: str, do_broadcast: bool = True) -> ActivatedKeyContainer:
+        activated_key = self._get_activated_key_by_id(key_id)
+
+        if self._is_master:
+            self._remove_key(key_id)
+
+            if do_broadcast:
+                await self._broadcast_deactivated_key(activated_key)
         else:
-            activated_key = key_requester.ask_to_deactivate_key(activated_key)
+            key_requester.ask_to_deactivate_key(activated_key)
 
-            self._activated_keys.remove(activated_key)
+            self._remove_key(key_id)
+
+        return activated_key

@@ -22,3 +22,8 @@ class ActivatedKeyContainer(BaseModel):
     master_sae_id: str
     slave_sae_id: str
     key_container: FullKeyContainer
+
+
+class ActivatedKeyMetadata(BaseModel):
+    master_sae_id: str
+    slave_sae_id: str

@@ -37,3 +37,7 @@ class PostDecryptionKeysRequest(BaseModel):
 class PostAskForKeyRequest(BaseModel):
     master_sae_id: str
     slave_sae_id: str
+
+
+class PostAskForKeyDeactivationRequest(BaseModel):
+    key_ID: UUID

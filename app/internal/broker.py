@@ -5,6 +5,7 @@ from typing import Union, Callable
 
 import aiormq
 from aiormq.abc import AbstractConnection, AbstractChannel, DeliveredMessage
+from fastapi.encoders import jsonable_encoder
 
 from app.config import Settings
 
@@ -100,4 +101,4 @@ class Broker:
             return
 
         await self._channel.basic_publish(routing_key=self._queue_name,
-                                          body=json.dumps(message).encode())
+                                          body=json.dumps(jsonable_encoder(message)).encode())
