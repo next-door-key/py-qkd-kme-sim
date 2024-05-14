@@ -1,1 +1,3 @@
-docker/rabbitmq
+docker
+certs/*
+!certs/.gitkeep

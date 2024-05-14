@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from app.dependencies import get_settings
 from app.internal.lifecycle import Lifecycle
@@ -20,6 +21,7 @@ async def lifespan(api: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(HTTPSRedirectMiddleware)
 
 app.include_router(router=internal.router, prefix='/api/v1')
 app.include_router(router=keys.router, prefix='/api/v1')

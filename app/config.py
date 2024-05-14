@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     min_key_size: int = 64
     max_key_size: int = 1024
     default_key_size: int = 128
-    max_key_count: int = 5
+    max_key_count: int = 1000
     max_keys_per_request: int = 128
 
     key_generation_timeout_in_seconds: int = 2
@@ -24,3 +24,8 @@ class Settings(BaseSettings):
     mq_username: str = 'guest'
     mq_password: str = 'guest'
     mq_shared_queue: str
+
+    ca_file: str
+    kme_cert: str
+    kme_key: str
+    sae_cert: str

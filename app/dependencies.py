@@ -1,12 +1,16 @@
 from functools import lru_cache
+from ssl import SSLContext
 from typing import Union
 
-from fastapi import HTTPException
-from starlette.requests import Request
+from fastapi import HTTPException, Request
 
 from app.config import Settings
 from app.internal.lifecycle import Lifecycle
 from app.models.kme_sae_ids import KmeSaeIds
+
+
+async def validate_sae_id_from_tls_cert(request: Request):
+    print('running', SSLContext.wrap_socket().getpeercert())
 
 
 def get_kme_and_sae_ids_from_slave_id(slave_sae_id: str) -> KmeSaeIds:

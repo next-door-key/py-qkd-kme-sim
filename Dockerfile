@@ -2,8 +2,6 @@
 
 FROM python:3.10-alpine3.18
 
-ENV HOST=0.0.0.0
-ENV PORT=8090
 ENV PYTHONUNBUFFERED=1
 
 COPY . /opt/next-door-key-simulator
@@ -16,4 +14,4 @@ RUN pip3 install --no-cache --upgrade pip setuptools
 
 RUN pip3 install --no-cache -r requirements.txt
 
-CMD fastapi run app/main.py --port="$PORT"
+CMD fastapi run app/main.py

@@ -1,4 +1,86 @@
 services:
+    ndk-kme-1:
+        build: .
+        container_name: ndk-kme-1
+        restart: always
+        environment:
+            - IS_MASTER=1
+            - KME_ID=abc-def
+            - ATTACHED_SAE_ID=foo-bar
+            - LINKED_TO_KME=https://ndk-kme-2:9000
+            - LINKED_KME_ID=def-abc
+            - LINKED_SAE_ID=bar-foo
+            - MIN_KEY_SIZE=64
+            - MAX_KEY_SIZE=1024
+            - DEFAULT_KEY_SIZE=128
+            - MAX_KEY_COUNT=1000
+            - MAX_KEYS_PER_REQUEST=128
+            - KEY_GENERATION_TIMEOUT_IN_SECONDS=2
+            - MQ_HOST=ndk-rabbitmq
+            - MQ_PORT=5672
+            - MQ_USERNAME=guest
+            - MQ_PASSWORD=guest
+            - MQ_SHARED_QUEUE=kme-abc-def-def-abc
+            - CA_FILE=/certs/ca.crt
+            - KME_CERT=/certs/kme-1.crt
+            - KME_KEY=/certs/kme-1.key
+            - SAE_CERT=/certs/sae-1.crt
+        volumes:
+            - ./certs:/certs:ro
+        ports:
+            - "8000:8000"
+        healthcheck:
+            test: curl -f -k --cert /certs/sae-1.crt.pem --key /certs/sae-1.key.pem https://ndk-kme-1:8000 || exit 1
+            interval: 1m
+            timeout: 10s
+            retries: 1
+        networks:
+            kme-network:
+                aliases:
+                    - ndk-kme-1
+
+    ndk-kme-2:
+        build: .
+        container_name: ndk-kme-2
+        restart: always
+        environment:
+            - IS_MASTER=0
+            - KME_ID=def-abc
+            - ATTACHED_SAE_ID=bar-foo
+            - LINKED_TO_KME=https://ndk-kme-1:8000
+            - LINKED_KME_ID=abc-def
+            - LINKED_SAE_ID=foo-bar
+            - MIN_KEY_SIZE=64
+            - MAX_KEY_SIZE=1024
+            - DEFAULT_KEY_SIZE=128
+            - MAX_KEY_COUNT=1000
+            - MAX_KEYS_PER_REQUEST=128
+            - KEY_GENERATION_TIMEOUT_IN_SECONDS=2
+            - MQ_HOST=ndk-rabbitmq
+            - MQ_PORT=5672
+            - MQ_USERNAME=guest
+            - MQ_PASSWORD=guest
+            - MQ_SHARED_QUEUE=kme-abc-def-def-abc
+            - CA_FILE=/certs/ca.crt
+            - KME_CERT=/certs/kme-2.crt
+            - KME_KEY=/certs/kme-2.key
+            - SAE_CERT=/certs/sae-2.crt
+        volumes:
+            - ./certs:/certs:ro
+        ports:
+            - "9000:8000"
+        depends_on:
+            - ndk-kme-1
+        healthcheck:
+            test: curl -f -k --cert /certs/sae-2.crt.pem --key /certs/sae-2.key.pem https://ndk-kme-2:9000 || exit 1
+            interval: 1m
+            timeout: 10s
+            retries: 1
+        networks:
+            kme-network:
+                aliases:
+                    - ndk-kme-2
+
     rabbitmq:
         image: rabbitmq:3-management-alpine
         container_name: 'rabbitmq'
@@ -9,8 +91,10 @@ services:
             - ./docker/rabbitmq/data/:/var/lib/rabbitmq/
             - ./docker/rabbitmq/log/:/var/log/rabbitmq
         networks:
-            - rabbitmq_go_net
+            kme-network:
+                aliases:
+                    - ndk-rabbitmq
 
 networks:
-    rabbitmq_go_net:
+    kme-network:
         driver: bridge
