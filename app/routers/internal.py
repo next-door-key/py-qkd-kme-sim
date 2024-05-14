@@ -34,6 +34,7 @@ async def ask_for_key(
     return {'data': await lifecycle.key_manager.get_key(
         master_sae_id=data.master_sae_id,
         slave_sae_id=data.slave_sae_id,
+        size=data.size,
         do_broadcast=False
     )}
 

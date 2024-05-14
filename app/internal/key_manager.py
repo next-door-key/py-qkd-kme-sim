@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 from typing import Union
@@ -18,7 +19,10 @@ class KeyManager:
         self._is_master = settings.is_master
         self._broker = broker
 
-        self._key_size = settings.default_key_size
+        self._min_key_size = settings.min_key_size
+        self._default_key_size = settings.default_key_size
+        self._max_key_size = settings.max_key_size
+
         self._key_generate_timeout_in_seconds = settings.key_generation_timeout_in_seconds
         self._max_key_count = settings.max_key_count
 
@@ -61,7 +65,7 @@ class KeyManager:
             await self._generate_key()
 
     async def _generate_key(self):
-        key = key_generator.generate(self._key_size)
+        key = key_generator.generate(self._min_key_size, self._max_key_size)
 
         self._keys.append(key)
         await self._broadcast_key(key)
@@ -94,7 +98,7 @@ class KeyManager:
         elif json_message['type'] == 'activated_key':
             self._activated_keys.append(ActivatedKeyContainer(**data))
         elif json_message['type'] == 'deactivated_key':
-            self._remove_key(str(ActivatedKeyContainer(**data).key_container.key_container.key_ID))
+            self._remove_key(str(ActivatedKeyContainer(**data).key_ID))
 
     def get_key_count(self):
         return len(self._keys)
@@ -114,7 +118,7 @@ class KeyManager:
                 removed = True
 
         for i, key in enumerate(self._activated_keys):
-            if str(key.key_container.key_container.key_ID) == key_id:
+            if str(key.key_ID) == key_id:
                 del self._activated_keys[i]
                 removed = True
 
@@ -123,27 +127,52 @@ class KeyManager:
 
         return removed
 
-    def _activate_key(self, key: FullKeyContainer, master_sae_id: str, slave_sae_id: str) -> ActivatedKeyContainer:
+    def _get_key_from_key_parts(self, key_parts: list[str], size: int) -> str:
+        merged_key = b''
+
+        for part in key_parts:
+            merged_key += base64.b64decode(part)
+
+            if len(merged_key) >= size:
+                return base64.b64encode(merged_key).decode('ascii')
+
+        raise RuntimeError('This should not be possible')
+
+    def _activate_key(
+            self,
+            key: FullKeyContainer,
+            master_sae_id: str,
+            slave_sae_id: str,
+            size: int
+    ) -> ActivatedKeyContainer:
         activated_key = ActivatedKeyContainer(
-            key_container=key,
             master_sae_id=master_sae_id,
-            slave_sae_id=slave_sae_id
+            slave_sae_id=slave_sae_id,
+            size=size,
+            key_ID=key.key_container.key_ID,
+            key=self._get_key_from_key_parts(key.key_container.key_parts, size)
         )
 
         self._activated_keys.append(activated_key)
 
         return activated_key
 
-    async def get_key(self, master_sae_id: str, slave_sae_id: str, do_broadcast: bool = True) -> ActivatedKeyContainer:
+    async def get_key(
+            self,
+            master_sae_id: str,
+            slave_sae_id: str,
+            size: int,
+            do_broadcast: bool = True
+    ) -> ActivatedKeyContainer:
         activated_key: ActivatedKeyContainer
 
         if self._is_master:
-            activated_key = self._activate_key(self._get_single_key(), master_sae_id, slave_sae_id)
+            activated_key = self._activate_key(self._get_single_key(), master_sae_id, slave_sae_id, size)
 
             if do_broadcast:
                 await self._broadcast_activated_key(activated_key)
         else:
-            activated_key = key_requester.ask_for_key(master_sae_id, slave_sae_id)
+            activated_key = key_requester.ask_for_key(master_sae_id, slave_sae_id, size)
 
             self._activated_keys.append(activated_key)
 
@@ -151,7 +180,7 @@ class KeyManager:
 
     def _get_activated_key_by_id(self, key_id: str) -> ActivatedKeyContainer:
         for key in self._activated_keys:
-            if str(key.key_container.key_container.key_ID) == key_id:
+            if str(key.key_ID) == key_id:
                 return key
 
         raise ValueError('Key cannot be found because key_id is not found in activated keys')
@@ -162,7 +191,9 @@ class KeyManager:
 
             return ActivatedKeyMetadata(
                 master_sae_id=key.master_sae_id,
-                slave_sae_id=key.slave_sae_id
+                slave_sae_id=key.slave_sae_id,
+                size=key.size,
+                key_ID=key.key_ID,
             )
         except ValueError:
             return None

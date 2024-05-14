@@ -14,16 +14,25 @@ class KeyContainer(BaseModel):
     key: str
 
 
+class KeyPartsContainer(BaseModel):
+    key_ID: UUID
+    key_parts: list
+
+
 class FullKeyContainer(BaseModel):
-    key_container: KeyContainer
+    key_container: KeyPartsContainer
 
 
 class ActivatedKeyContainer(BaseModel):
     master_sae_id: str
     slave_sae_id: str
-    key_container: FullKeyContainer
+    size: int
+    key_ID: UUID
+    key: str
 
 
 class ActivatedKeyMetadata(BaseModel):
     master_sae_id: str
     slave_sae_id: str
+    size: int
+    key_ID: UUID

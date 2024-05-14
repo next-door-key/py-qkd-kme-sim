@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import sys
 from typing import Any
 
@@ -7,6 +8,8 @@ import requests
 # <KME URL>, <ATTACHED SAE ID>
 KME_1 = {'url': 'http://localhost:8000', 'sae_id': 'foo-bar'}
 KME_2 = {'url': 'http://localhost:9000', 'sae_id': 'bar-foo'}
+
+KEY_SIZE = 256
 
 
 def _get_request(url: str) -> Any:
@@ -43,7 +46,7 @@ async def test_sequence_from_kme_a_to_kme_b(kme_a_url: str, kme_a_sae_id: str,
     assert await wait_for_ready_key_stores() == 0, 'The key store status returned an error'
 
     # Activate key
-    response = _get_request(f'{kme_a_url}/api/v1/keys/{kme_b_sae_id}/enc_keys')
+    response = _get_request(f'{kme_a_url}/api/v1/keys/{kme_b_sae_id}/enc_keys?size={KEY_SIZE}')
     key_id = response['keys'][0]['key_ID']
 
     # Check if key is now activated for both instances
@@ -60,7 +63,9 @@ async def test_sequence_from_kme_a_to_kme_b(kme_a_url: str, kme_a_sae_id: str,
             if (
                     key['master_sae_id'] == kme_a_sae_id and
                     key['slave_sae_id'] == kme_b_sae_id and
-                    key['key_container']['key_container']['key_ID'] == key_id
+                    key['key_ID'] == key_id and
+                    key['size'] == KEY_SIZE and
+                    len(base64.b64decode(key['key'])) == KEY_SIZE
             ):
                 key_found = True
 

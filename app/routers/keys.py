@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import Settings
 from app.dependencies import get_settings, get_lifecycle, get_kme_and_sae_ids_from_slave_id, \
     get_kme_and_sae_ids_from_master_id
-from app.enums.initiated_by import InitiatedBy
 from app.internal.lifecycle import Lifecycle
 from app.models.key_container import KeyContainer
 from app.models.requests import PostEncryptionKeysRequest, GetEncryptionKeysRequest, GetDecryptionKeysRequest, \
@@ -64,14 +63,17 @@ async def get_encryption_keys(
 
     keys: list[KeyContainer] = []
 
-    # TODO: Handle size
     for i in range(query.number):
         key = await lifecycle.key_manager.get_key(
             master_sae_id=ids.master_sae_id,
             slave_sae_id=ids.slave_sae_id,
+            size=query.size
         )
 
-        keys.append(key.key_container.key_container)
+        keys.append(KeyContainer(
+            key_ID=key.key_ID,
+            key=key.key
+        ))
 
     return {'keys': keys}
 
@@ -99,16 +101,18 @@ async def post_encryption_keys(
 
     keys: list[KeyContainer] = []
 
-    # TODO: Handle size
     # TODO: Throw error on usage of additional_SAE_ids and the usage of any of the extensions
     for i in range(data.number):
         key = await lifecycle.key_manager.get_key(
             master_sae_id=ids.master_sae_id,
             slave_sae_id=ids.slave_sae_id,
-            initiated_by=InitiatedBy.MASTER if settings.is_master else InitiatedBy.SLAVE
+            size=data.size
         )
 
-        keys.append(key.key_container.key_container)
+        keys.append(KeyContainer(
+            key_ID=key.key_ID,
+            key=key.key
+        ))
 
     return {'keys': keys}
 
@@ -145,7 +149,12 @@ async def get_decryption_keys(
         key_id=str(query.key_ID),
     )
 
-    return {'keys': [key.key_container.key_container]}
+    return {'keys': [
+        KeyContainer(
+            key_ID=key.key_ID,
+            key=key.key
+        )
+    ]}
 
 
 @router.post('/{master_sae_id}/dec_keys')
