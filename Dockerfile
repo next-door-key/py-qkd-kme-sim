@@ -4,8 +4,8 @@ FROM python:3.10-alpine3.18
 
 ENV PYTHONUNBUFFERED=1
 
-COPY . /opt/next-door-key-simulator
-WORKDIR /opt/next-door-key-simulator
+COPY . /opt/py-qkd-kme-sim
+WORKDIR /opt/py-qkd-kme-sim
 
 RUN apk add -U --no-cache bash curl
 
@@ -14,4 +14,4 @@ RUN pip3 install --no-cache --upgrade pip setuptools
 
 RUN pip3 install --no-cache -r requirements.txt
 
-CMD fastapi run app/main.py
+CMD exec python3 main.py

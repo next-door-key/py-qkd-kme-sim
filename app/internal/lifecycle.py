@@ -1,9 +1,9 @@
 import asyncio
-import ssl
 from typing import Union
 
 import urllib3
 from fastapi import FastAPI
+from uvicorn.protocols.http.httptools_impl import HttpToolsProtocol
 
 from app.config import Settings
 from app.internal.broker import Broker
@@ -47,11 +47,14 @@ class Lifecycle:
     def _configure_tls(self):
         urllib3.disable_warnings()
 
-        context = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH, cafile=self.settings.ca_file)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(certfile=self.settings.kme_cert, keyfile=self.settings.kme_key)
-        context.verify_mode = ssl.CERT_REQUIRED
-        context.check_hostname = False
+        # Add mTLS certificates into the request scope
+        old_on_url = HttpToolsProtocol.on_url
+
+        def new_on_url(self, url):
+            old_on_url(self, url)
+            self.scope['transport'] = self.transport
+
+        HttpToolsProtocol.on_url = new_on_url
 
     async def before_start(self):
         self._verify_settings()

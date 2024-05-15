@@ -77,7 +77,12 @@ class Broker:
         )
 
     async def _receive_message(self, message: DeliveredMessage):
-        logger.info('Received new message from broker: %s', message.body)
+        try:
+            json_message = json.loads(message.body.decode())
+
+            logger.info('Received new message from broker, type: %s', json_message['type'])
+        except ValueError:
+            logger.info('Received new non-JSON message from broker: %s', message.body)
 
         try:
             for callback in self.callbacks:

@@ -1,19 +1,40 @@
 import asyncio
 import base64
+import pathlib
 import sys
 from typing import Any
 
 import requests
+import urllib3
 
-# <KME URL>, <ATTACHED SAE ID>
-KME_1 = {'url': 'http://localhost:8000', 'sae_id': 'foo-bar'}
-KME_2 = {'url': 'http://localhost:9000', 'sae_id': 'bar-foo'}
+KME_1 = {
+    'url': 'https://localhost:8000',
+    'sae_id': 'foo-bar',
+    'sae_cert': 'certs/sae-1.crt',
+    'sae_key': 'certs/sae-1.key'
+}
+
+KME_2 = {
+    'url': 'https://localhost:9000',
+    'sae_id': 'bar-foo',
+    'sae_cert': 'certs/sae-2.crt',
+    'sae_key': 'certs/sae-2.key'
+}
 
 KEY_SIZE = 256
 
 
+def _get_path(path: str) -> str:
+    return str(pathlib.Path(__file__).parent.resolve().joinpath(path))
+
+
 def _get_request(url: str) -> Any:
-    response = requests.get(url)
+    if url.startswith(KME_1['url']):
+        certs = (_get_path(KME_1['sae_cert']), _get_path(KME_1['sae_key']))
+    else:
+        certs = (_get_path(KME_2['sae_cert']), _get_path(KME_2['sae_key']))
+
+    response = requests.get(url, cert=certs, verify=False)
 
     if response.status_code != 200:
         print(response.json())
@@ -88,6 +109,8 @@ async def test_sequence_from_kme_a_to_kme_b(kme_a_url: str, kme_a_sae_id: str,
 
 
 async def main():
+    urllib3.disable_warnings()
+
     result = await test_sequence_from_kme_a_to_kme_b(
         kme_a_url=KME_1['url'],
         kme_a_sae_id=KME_1['sae_id'],
