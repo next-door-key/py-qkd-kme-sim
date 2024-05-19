@@ -12,7 +12,7 @@ def _generate_key_part(size: int) -> str:
 def generate(min_size: int, max_size: int) -> FullKeyContainer:
     key_parts = []
 
-    for i in range(min_size, max_size, 8):
+    for i in range(8, max_size + 8, 8):
         key_parts.append(_generate_key_part(8))
 
     return FullKeyContainer(
