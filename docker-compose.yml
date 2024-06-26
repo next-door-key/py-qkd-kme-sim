@@ -30,7 +30,7 @@ services:
         ports:
             - "8000:8000"
         healthcheck:
-            test: curl -f -k --cert /certs/sae-1.crt.pem --key /certs/sae-1.key.pem https://ndk-kme-1:8000 || exit 1
+            test: curl -f -k --cert /certs/sae-1.crt --key /certs/sae-1.key https://ndk-kme-1:8000 || exit 1
             interval: 1m
             timeout: 10s
             retries: 1
@@ -72,7 +72,7 @@ services:
         depends_on:
             - ndk-kme-1
         healthcheck:
-            test: curl -f -k --cert /certs/sae-2.crt.pem --key /certs/sae-2.key.pem https://ndk-kme-2:9000 || exit 1
+            test: curl -f -k --cert /certs/sae-2.crt --key /certs/sae-2.key https://ndk-kme-2:9000 || exit 1
             interval: 1m
             timeout: 10s
             retries: 1
