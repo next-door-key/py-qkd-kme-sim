@@ -127,14 +127,14 @@ class KeyManager:
 
         return removed
 
-    def _get_key_from_key_parts(self, key_parts: list[str], size: int) -> str:
-        merged_key = b''
+    def _get_key_from_key_parts(self, key_parts: list[str], size_bits: int) -> str:
+        merged_key_bytes = b''
 
         for part in key_parts:
-            merged_key += base64.b64decode(part)
+            merged_key_bytes += base64.b64decode(part)
 
-            if len(merged_key) >= size:
-                return base64.b64encode(merged_key).decode('ascii')
+            if (len(merged_key_bytes) * 8) >= size_bits:
+                return base64.b64encode(merged_key_bytes).decode('ascii')
 
         raise RuntimeError('This should not be possible')
 

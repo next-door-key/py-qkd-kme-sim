@@ -19,6 +19,9 @@ class Lifecycle:
         self.settings = settings
 
     def _verify_settings(self):
+        if self.settings.min_key_size < 8:
+            raise ValueError('The minimum key size must be at least 8 bits')
+
         if self.settings.min_key_size > self.settings.max_key_size:
             raise ValueError('Please define a correct range of min, max key sizes')
 
