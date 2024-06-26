@@ -1,3 +1,5 @@
 docker
 certs/*
 !certs/.gitkeep
+.venv
+__pycache__
